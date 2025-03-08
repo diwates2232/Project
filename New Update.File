@@ -1,0 +1,643 @@
+index.html
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Device Downtime Monitor</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <h1>Device Downtime Monitor</h1>
+  <div class="controls">
+    <label for="deviceIp">IP Address:</label>
+    <input type="text" id="deviceIp" placeholder="e.g. 192.168.1.10" />
+    <label for="isOnline">Status:</label>
+    <select id="isOnline">
+      <option value="true">Online</option>
+      <option value="false">Offline</option>
+    </select>
+    <button onclick="trackDowntime()">Track Downtime</button>
+  </div>
+  <button onclick="fetchDowntimeData()">Refresh Data</button>
+
+  <table id="downtimeTable">
+    <thead>
+      <tr>
+        <th>IP Address</th>
+        <th>Downtime Count</th>
+        <th>Needs Repair</th>
+      </tr>
+    </thead>
+    <tbody></tbody>
+  </table>
+
+  <script src="script.js"></script>
+</body>
+</html>
+
+
+
+Scripts.js
+
+const BASE_URL = 'http://localhost:3000/api/devices';
+
+// Fetch the latest downtime data
+async function fetchDowntimeData() {
+  try {
+    const response = await fetch(`${BASE_URL}/report`);
+    if (!response.ok) {
+      throw new Error(`HTTP error! Status: ${response.status}`);
+    }
+    const data = await response.json();
+    updateTable(data);
+  } catch (error) {
+    console.error('Error fetching downtime data:', error);
+  }
+}
+
+// Update the HTML table with fetched data
+function updateTable(devices) {
+  const tbody = document
+    .getElementById('downtimeTable')
+    .querySelector('tbody');
+  tbody.innerHTML = '';
+
+  devices.forEach((device) => {
+    const row = document.createElement('tr');
+    row.innerHTML = `
+      <td>${device.ipAddress}</td>
+      <td>${device.downtimeCount}</td>
+      <td>${device.needsRepair}</td>
+    `;
+    tbody.appendChild(row);
+  });
+}
+
+// Send a POST request to track downtime
+async function trackDowntime() {
+  const ipInput = document.getElementById('deviceIp');
+  const isOnlineSelect = document.getElementById('isOnline');
+
+  const deviceId = ipInput.value.trim();
+  const isOnline = isOnlineSelect.value === 'true';
+
+  if (!deviceId) {
+    alert('Please enter a valid IP address!');
+    return;
+  }
+
+  try {
+    const response = await fetch(`${BASE_URL}/track`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ deviceId, isOnline }),
+    });
+    const data = await response.json();
+    alert(data.message);
+    fetchDowntimeData(); // Refresh table after updating
+  } catch (error) {
+    console.error('Error tracking downtime:', error);
+  }
+}
+
+// Auto-refresh data every 5 seconds
+setInterval(fetchDowntimeData, 5000);
+
+// Load data on page load
+document.addEventListener('DOMContentLoaded', () => {
+  fetchDowntimeData();
+});
+
+
+
+styles.css
+
+body {
+    font-family: Arial, sans-serif;
+    margin: 20px;
+    background: #f9f9f9;
+  }
+  
+  h1 {
+    text-align: center;
+  }
+  
+  .controls {
+    margin: 20px auto;
+    text-align: center;
+  }
+  
+  label {
+
+
+    margin: 0 10px;
+  }
+  
+  input, select, button {
+    padding: 8px;
+    margin: 5px;
+  }
+  
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 20px;
+    background: white;
+  }
+  
+  th, td {
+    border: 1px solid #ccc;
+    padding: 10px;
+    text-align: center;
+  }
+  
+  th {
+    background: #eee;
+  }
+
+
+
+
+
+
+
+deviceController.js
+
+const { trackDowntime, getDowntimeData, exportDowntimeReport } = require('../services/deviceService');
+
+const trackDeviceDowntime = async (req, res) => {
+  const { deviceId, isOnline } = req.body;
+  if (!deviceId) {
+    return res.status(400).json({ message: 'IP address is required' });
+  }
+  await trackDowntime(deviceId, isOnline);
+  return res.status(200).json({ message: `Downtime recorded for IP ${deviceId}` });
+};
+
+const getDowntimeReport = (req, res) => {
+  // Optional: exportDowntimeReport() if you want to ensure up-to-date Excel
+  const data = getDowntimeData();
+  return res.status(200).json(data);
+};
+
+module.exports = { trackDeviceDowntime, getDowntimeReport };
+
+
+
+deviceRoutes.js
+
+const express = require('express');
+const { trackDeviceDowntime, getDowntimeReport } = require('../controllers/deviceController');
+
+const router = express.Router();
+
+// POST /api/devices/track
+router.post('/track', trackDeviceDowntime);
+
+// GET /api/devices/report
+router.get('/report', getDowntimeReport);
+
+module.exports = router;
+
+
+
+deviceService.js
+
+// // src/services/deviceService.js
+// const fs = require('fs');
+// const path = require('path');
+// const XLSX = require('xlsx');
+
+// // In-memory storage of downtime
+// const downtimeRecords = {};
+// let deviceList = new Set();
+
+// /**
+//  * Loads IP addresses from multiple Excel files (must have a column named "Ip_address")
+//  */
+// function loadDeviceData() {
+//   const files = ['ArchiverData.xlsx', 'CameraData.xlsx', 'ControllerData.xlsx', 'ServerData.xlsx'];
+//   const dataPath = path.join(__dirname, '../../data');
+
+//   files.forEach((file) => {
+//     const filePath = path.join(dataPath, file);
+//     if (fs.existsSync(filePath)) {
+//       const workbook = XLSX.readFile(filePath);
+//       const sheetName = workbook.SheetNames[1];
+//       const sheetData = XLSX.utils.sheet_to_json(workbook.Sheets[sheetName]);
+//       sheetData.forEach((row) => {
+//         if (row.Ip_address) deviceList.add(row.Ip_address);
+//       });
+//     }
+//   });
+// }
+
+// /**
+//  * Tracks downtime for a given IP address
+//  */
+// async function trackDowntime(ipAddress, isOnline) {
+//   const now = new Date();
+
+//   if (!downtimeRecords[ipAddress]) {
+//     downtimeRecords[ipAddress] = [];
+//   }
+
+//   // Record a timestamp if device is offline
+//   if (!isOnline) {
+//     downtimeRecords[ipAddress].push(now);
+
+//   }
+
+//   // Filter to keep only downtimes in the last 1 minute
+//   downtimeRecords[ipAddress] = downtimeRecords[ipAddress].filter(
+//     (date) => (now - date) / (1000 * 60) <= 1
+//   );
+
+//   // If more than 3 downtimes in 1 minute → needs repair
+//   if (downtimeRecords[ipAddress].length > 1) {
+//     console.log(`Device with IP ${ipAddress} needs repair.`);
+//   }
+
+//   // Generate the Excel report
+//   exportDowntimeReport();
+// }
+
+// /**
+//  * Returns downtime data in JSON form
+//  */
+// function getDowntimeData() {
+//   return Object.entries(downtimeRecords).map(([ipAddress, times]) => ({
+//     ipAddress,
+//     downtimeCount: times.length,
+//     needsRepair: times.length > 3 ? 'Yes' : 'No',
+//   }));
+// }
+
+// /**
+//  * Exports downtime data to an Excel file (downtimeRecords.xlsx)
+//  */
+// function exportDowntimeReport() {
+//   const data = getDowntimeData();
+
+//   const filePath = path.join(__dirname, '../../data/downtimeRecords.xlsx');
+//   if (!fs.existsSync(path.dirname(filePath))) {
+//     fs.mkdirSync(path.dirname(filePath), { recursive: true });
+//   }
+
+//   const ws = XLSX.utils.json_to_sheet(data);
+//   const wb = XLSX.utils.book_new();
+//   XLSX.utils.book_append_sheet(wb, ws, 'Downtime Report');
+//   XLSX.writeFile(wb, filePath);
+// }
+
+// module.exports = {
+//   loadDeviceData,
+//   trackDowntime,
+//   getDowntimeData,
+//   exportDowntimeReport,
+// };
+// src/services/deviceService.js
+const fs = require('fs');
+const path = require('path');
+const XLSX = require('xlsx');
+
+// In-memory storage of downtime
+const downtimeRecords = {};
+let deviceList = new Set();
+
+/**
+ * Loads IP addresses from multiple Excel files (any sheet that has a column named "Ip_address")
+ */
+function loadDeviceData() {
+  const files = ['ArchiverData.xlsx', 'CameraData.xlsx', 'ControllerData.xlsx', 'ServerData.xlsx'];
+  const dataPath = path.join(__dirname, '../../data');
+
+  files.forEach((file) => {
+    const filePath = path.join(dataPath, file);
+    if (fs.existsSync(filePath)) {
+      const workbook = XLSX.readFile(filePath);
+      // Go through ALL sheets in this workbook
+      workbook.SheetNames.forEach((sheetName) => {
+        const sheetData = XLSX.utils.sheet_to_json(workbook.Sheets[sheetName]);
+        sheetData.forEach((row) => {
+          // If row has Ip_address, add to deviceList
+          if (row.Ip_address) {
+            deviceList.add(row.Ip_address);
+          }
+        });
+      });
+    }
+  });
+
+  console.log(`Loaded IP addresses:`, Array.from(deviceList));
+}
+
+
+/**
+ * Tracks downtime for a given IP address
+ */
+async function trackDowntime(ipAddress, isOnline) {
+  const now = new Date();
+
+  if (!downtimeRecords[ipAddress]) {
+    downtimeRecords[ipAddress] = [];
+  }
+
+  // Record a timestamp if device is offline
+  if (!isOnline) {
+    downtimeRecords[ipAddress].push(now);
+  }
+
+  // Filter to keep only downtimes in the last 1 minute
+  downtimeRecords[ipAddress] = downtimeRecords[ipAddress].filter(
+    (date) => (now - date) / (1000 * 60) <= 1
+  );
+
+  // If more than 1 downtime in 1 minute → needs repair
+  if (downtimeRecords[ipAddress].length > 1) {
+    console.log(`Device with IP ${ipAddress} needs repair.`);
+  }
+
+  // Generate the Excel report
+  exportDowntimeReport();
+}
+
+/**
+ * Returns downtime data in JSON form
+ */
+function getDowntimeData() {
+  return Object.entries(downtimeRecords).map(([ipAddress, times]) => ({
+    ipAddress,
+    downtimeCount: times.length,
+    needsRepair: times.length > 1 ? 'Yes' : 'No', 
+  }));
+}
+
+/**
+ * Exports downtime data to an Excel file (downtimeRecords.xlsx)
+ */
+function exportDowntimeReport() {
+  const data = getDowntimeData();
+
+  const filePath = path.join(__dirname, '../../data/downtimeRecords.xlsx');
+  if (!fs.existsSync(path.dirname(filePath))) {
+    fs.mkdirSync(path.dirname(filePath), { recursive: true });
+  }
+
+  const ws = XLSX.utils.json_to_sheet(data);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Downtime Report');
+  XLSX.writeFile(wb, filePath);
+}
+
+module.exports = {
+  loadDeviceData,
+  trackDowntime,
+  getDowntimeData,
+  exportDowntimeReport,
+};
+
+
+
+
+app.js
+
+// require("dotenv").config();
+// // import "dotenv/config";
+
+// const express = require("express");
+// const cors = require("cors");
+// const bodyParser = require("body-parser");
+// const fs = require("fs");
+// const ping = require("ping");
+// const regionRoutes = require("./routes/regionRoutes");
+// const { fetchAllIpAddress } = require("./services/excelService");
+// // const deviceRoutes = require('./routes/deviceRoutes');
+// const { loadDeviceData } = require('./services/deviceService');
+
+// const app = express();
+// const PORT = process.env.PORT || 3000;
+
+
+// const deviceRoutes = require('./routes/deviceRoutes');
+// // app.use('/api', deviceRoutes);
+
+
+
+// // Middleware
+// app.use(
+//   cors({
+//     origin: "http://127.0.0.1:5500", 
+//     methods: "GET,POST,PUT,DELETE",
+//     allowedHeaders: "Content-Type,Authorization",
+//   })
+// );
+
+// app.use(bodyParser.json());
+
+// loadDeviceData();
+
+// // Use our device routes
+// app.use('/api/devices', deviceRoutes);
+// // Routes
+// app.use("/api/regions", regionRoutes);
+
+// // app.use('/api/devices', deviceRoutes);
+
+
+
+// // Device Status Tracking
+// const devices = fetchAllIpAddress();
+// let deviceStatus = {};
+// const logFile = "./deviceLogs.json";
+
+// // Load previous logs if exists
+// let deviceLogs = fs.existsSync(logFile) ? JSON.parse(fs.readFileSync(logFile)) : {};
+
+// // Function to log device status changes
+// function logDeviceChange(ip, status) {
+//   const timestamp = new Date().toISOString();
+  
+//   if (!deviceLogs[ip]) {
+//     deviceLogs[ip] = [];
+//   }
+
+//   const lastLog = deviceLogs[ip].length ? deviceLogs[ip][deviceLogs[ip].length - 1] : null;
+  
+//   if (!lastLog || lastLog.status !== status) {
+//     deviceLogs[ip].push({ status, timestamp });
+//     fs.writeFileSync(logFile, JSON.stringify(deviceLogs, null, 2)); 
+//   }
+// }
+
+// // Ping all devices and log changes
+// async function pingDevices() {
+//   for (const ip of devices) {
+//     try {
+//       const result = await ping.promise.probe(ip);
+//       const newStatus = result.alive ? "Online" : "Offline";
+
+//       if (deviceStatus[ip] !== newStatus) {
+//         logDeviceChange(ip, newStatus);
+//       }
+//       deviceStatus[ip] = newStatus;
+//     } catch (error) {
+//       console.error(`Error pinging ${ip}:`, error);
+//       deviceStatus[ip] = "Offline";
+//     }
+//   }
+//   console.log("Updated device status:", deviceStatus);
+// }
+
+// // Ping devices every 30 seconds
+// setInterval(pingDevices, 30000);
+
+// // API to get real-time device status
+// app.get("/api/region/devices/status", (req, res) => {
+//   res.json(deviceStatus);
+// });
+
+
+
+// app.get("/api/regions/trend/details/:region", async (req, res) => {
+//   try {
+//       const region = req.params.region.toLowerCase();
+//       console.log("Requested Region:", region);
+
+//       const trends = await fetchRegionTrendData(region);
+//       return res.json({ region, trends });
+//   } catch (error) {
+//       console.error("Error fetching trend data:", error);
+//       return res.status(500).json({ error: "Internal server error", details: error.message });
+//   }
+// });
+
+
+// // Error handling middleware
+// app.use((err, req, res, next) => {
+//   console.error(err.stack);
+//   res.status(500).send("Something went wrong!");
+// });
+
+// // Start Server
+// app.listen(PORT, () => {
+//   console.log(`Server running on http://localhost:${PORT}`);
+//   pingDevices(); // Initial ping on startup
+// });
+
+
+require("dotenv").config();
+const express = require("express");
+const cors = require("cors");
+const bodyParser = require("body-parser");
+const fs = require("fs");
+const ping = require("ping");
+const regionRoutes = require("./routes/regionRoutes");
+const { fetchAllIpAddress } = require("./services/excelService");
+const { loadDeviceData } = require('./services/deviceService');
+const deviceRoutes = require('./routes/deviceRoutes');
+
+const app = express();
+const PORT = process.env.PORT || 3000;
+
+// Updated CORS configuration to allow both 5500 and 5501 origins
+app.use(
+  cors({
+    origin: ["http://127.0.0.1:5500", "http://127.0.0.1:5501"],
+    methods: "GET,POST,PUT,DELETE",
+    allowedHeaders: "Content-Type,Authorization",
+  })
+);
+
+app.use(bodyParser.json());
+
+loadDeviceData();
+
+// Use our device routes
+app.use('/api/devices', deviceRoutes);
+// Routes for regions
+app.use("/api/regions", regionRoutes);
+
+// Device Status Tracking
+const devices = fetchAllIpAddress();
+let deviceStatus = {};
+const logFile = "./deviceLogs.json";
+
+// Load previous logs if exists
+let deviceLogs = fs.existsSync(logFile) ? JSON.parse(fs.readFileSync(logFile)) : {};
+
+// Function to log device status changes
+function logDeviceChange(ip, status) {
+  const timestamp = new Date().toISOString();
+  
+  if (!deviceLogs[ip]) {
+    deviceLogs[ip] = [];
+  }
+  
+  const lastLog = deviceLogs[ip].length ? deviceLogs[ip][deviceLogs[ip].length - 1] : null;
+  
+  if (!lastLog || lastLog.status !== status) {
+    deviceLogs[ip].push({ status, timestamp });
+    fs.writeFileSync(logFile, JSON.stringify(deviceLogs, null, 2)); 
+  }
+}
+
+// Ping all devices and log changes
+async function pingDevices() {
+  for (const ip of devices) {
+    try {
+      const result = await ping.promise.probe(ip);
+      const newStatus = result.alive ? "Online" : "Offline";
+
+      if (deviceStatus[ip] !== newStatus) {
+        logDeviceChange(ip, newStatus);
+      }
+      deviceStatus[ip] = newStatus;
+    } catch (error) {
+      console.error(`Error pinging ${ip}:`, error);
+      deviceStatus[ip] = "Offline";
+    }
+  }
+  console.log("Updated device status:", deviceStatus);
+}
+
+// Ping devices every 30 seconds
+setInterval(pingDevices, 30000);
+
+// API to get real-time device status
+app.get("/api/region/devices/status", (req, res) => {
+  res.json(deviceStatus);
+});
+
+// Example trend details endpoint (ensure fetchRegionTrendData is defined elsewhere)
+app.get("/api/regions/trend/details/:region", async (req, res) => {
+  try {
+      const region = req.params.region.toLowerCase();
+      console.log("Requested Region:", region);
+
+      // Ensure fetchRegionTrendData is imported or defined
+      const trends = await fetchRegionTrendData(region);
+      return res.json({ region, trends });
+  } catch (error) {
+      console.error("Error fetching trend data:", error);
+      return res.status(500).json({ error: "Internal server error", details: error.message });
+  }
+});
+
+// Error handling middleware
+app.use((err, req, res, next) => {
+  console.error(err.stack);
+  res.status(500).send("Something went wrong!");
+});
+
+// Start Server
+app.listen(PORT, () => {
+  console.log(`Server running on http://localhost:${PORT}`);
+  pingDevices(); // Initial ping on startup
+});
+
+
+
+
+
